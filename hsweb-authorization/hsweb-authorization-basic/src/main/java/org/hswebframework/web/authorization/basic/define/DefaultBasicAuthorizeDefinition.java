@@ -1,0 +1,143 @@
+package org.hswebframework.web.authorization.basic.define;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.*;
+import org.hswebframework.web.authorization.annotation.*;
+import org.hswebframework.web.authorization.define.*;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.util.ObjectUtils;
+import org.springframework.util.StringUtils;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.hswebframework.web.authorization.define.ResourceDefinition.supportLocale;
+
+/**
+ * 默认权限权限定义
+ *
+ * @author zhouhao
+ * @since 3.0
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString
+public class DefaultBasicAuthorizeDefinition implements AopAuthorizeDefinition {
+
+    @JsonIgnore
+    private Class<?> targetClass;
+
+    @JsonIgnore
+    private Method targetMethod;
+
+    private ResourcesDefinition resources = new ResourcesDefinition();
+    private DimensionsDefinition dimensions = new DimensionsDefinition();
+
+    private String message = "error.access_denied";
+
+    private Phased phased = Phased.before;
+
+    private boolean allowAnonymous = false;
+
+    @Override
+    public boolean isEmpty() {
+        return false;
+    }
+
+    @Override
+    public boolean allowAnonymous() {
+        return allowAnonymous;
+    }
+
+    public static AopAuthorizeDefinition from(Class<?> targetClass, Method method) {
+        AopAuthorizeDefinitionParser parser = new AopAuthorizeDefinitionParser(targetClass, method);
+
+        return parser.parse();
+    }
+
+    public void putAnnotation(Dimensions ann) {
+        dimensions.setLogical(ann.logical());
+        if (ann.description().length > 0) {
+            dimensions.setDescription(String.join("", ann.description()));
+        }
+    }
+
+    public void putAnnotation(Authorize ann) {
+        if (!ann.merge()) {
+            getResources().clear();
+            getDimensions().clear();
+        }
+        setPhased(ann.phased());
+        getResources().setPhased(ann.phased());
+        for (Resource resource : ann.resources()) {
+            putAnnotation(resource);
+        }
+        for (Dimension dimension : ann.dimension()) {
+            putAnnotation(dimension);
+        }
+        if (ann.anonymous()) {
+            allowAnonymous = true;
+        }
+    }
+
+    public void putAnnotation(Dimension ann) {
+        if (ann.ignore()) {
+            getDimensions().clear();
+            return;
+        }
+        DimensionDefinition definition = new DimensionDefinition();
+        definition.setTypeId(ann.type());
+        definition.setDimensionId(new HashSet<>(Arrays.asList(ann.id())));
+        definition.setLogical(ann.logical());
+        getDimensions().addDimension(definition);
+    }
+
+    public void putAnnotation(Resource ann) {
+        ResourceDefinition resource = new ResourceDefinition();
+        resource.setId(ann.id());
+        resource.setName(ann.name());
+        resource.setLogical(ann.logical());
+        resource.setPhased(ann.phased());
+        resource.setDescription(String.join("\n", ann.description()));
+        for (ResourceAction action : ann.actions()) {
+            putAnnotation(resource, action);
+        }
+        resource.setGroup(new ArrayList<>(Arrays.asList(ann.group())));
+        setPhased(ann.phased());
+        getResources().setPhased(ann.phased());
+        resources.addResource(resource, ann.merge());
+    }
+
+    public ResourceActionDefinition putAnnotation(ResourceDefinition definition, ResourceAction ann) {
+        ResourceActionDefinition actionDefinition = new ResourceActionDefinition();
+        actionDefinition.setId(ann.id());
+        actionDefinition.setName(ann.name());
+        actionDefinition.setDescription(String.join("\n", ann.description()));
+
+        definition.addAction(actionDefinition);
+        return actionDefinition;
+    }
+
+
+    public void putAnnotation(ResourceActionDefinition definition, DataAccessType dataAccessType) {
+        if (dataAccessType.ignore()) {
+            return;
+        }
+        DataAccessTypeDefinition typeDefinition = new DataAccessTypeDefinition();
+        typeDefinition.setId(dataAccessType.id());
+        typeDefinition.setName(dataAccessType.name());
+        typeDefinition.setController(dataAccessType.controller());
+        typeDefinition.setConfiguration(dataAccessType.configuration());
+        typeDefinition.setDescription(String.join("\n", dataAccessType.description()));
+        definition.getDataAccess()
+                  .getDataAccessTypes()
+                  .add(typeDefinition);
+    }
+
+}
